@@ -406,7 +406,7 @@ function teamPlayerStats(games,team){
   function add(players){if(!players)return;players.forEach(function(p){
     var nm=(p.name+" "+p.surname).trim();var key=nm.toLowerCase();if(!key)return;
     if(!P[key])P[key]={name:nm,num:p.num,GP:0,PTS:0,REB:0,AST:0,STL:0,BLK:0};
-    var e=P[key];e.GP++;e.PTS+=PT(p);e.REB+=p.REB;e.AST+=p.AST;e.STL+=p.STL;e.BLK+=p.BLK;if(p.num&&!e.num)e.num=p.num;
+    var e=P[key];e.GP++;e.PTS+=PT(p);e.REB+=p.REB;e.AST+=p.AST;e.STL+=p.STL;e.BLK+=p.BLK;if(p.num)e.num=p.num;
   });}
   games.forEach(function(gm){if(nkey(gm.teamA)===nkey(team))add(gm.playersA);else if(nkey(gm.teamB)===nkey(team))add(gm.playersB);});
   return Object.keys(P).map(function(k){return P[k];}).sort(function(a,b){return b.PTS/b.GP-a.PTS/a.GP||b.PTS-a.PTS;});
