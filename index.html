@@ -437,6 +437,7 @@ var IC={
 };
 var KEY_S="cpl-sched-v4", KEY_B="cpl-box-v4", DKEY="cpl-division", OVKEY="cpl-overrides", FAVKEY="cpl-fav", GH_PAT_KEY="cpl-gh-pat";
 var GH_REPO="hazlees/cpl-stats", GH_FILE="index.html";
+var BAKED_TS=0, LS_TS_KEY="cpl-ts";
 var state={sched:null,box:null,meta:{},view:{name:"standings"},error:"",notice:"",loading:"",division:"Division 3",schedRound:null,fav:"The Revolution",overrides:{}};
 var app=document.getElementById("app");
 function persistOv(){try{localStorage.setItem(OVKEY,JSON.stringify(state.overrides));}catch(_){}}
@@ -497,11 +498,13 @@ function publishToGithub(){
   var fixT="var BAKED_FIX="+encFix()+";";
   var datesT="var BAKED_DATES="+encDates()+";";
   var boxT="var BAKED_BOX="+encBox()+";";
+  var tsT="var BAKED_TS="+Date.now()+";";
   app.innerHTML="";
   var html="<!doctype html>\n"+document.documentElement.outerHTML;
   html=html.replace(/var BAKED_FIX=\[[\s\S]*?\];/,function(){return fixT;});
   html=html.replace(/var BAKED_DATES=\{[\s\S]*?\};/,function(){return datesT;});
   html=html.replace(/var BAKED_BOX=\[[\s\S]*?\];/,function(){return boxT;});
+  html=html.replace(/var BAKED_TS=\d+;/,function(){return tsT;});
   state.loading="Publishing…";render();
   var api="https://api.github.com/repos/"+GH_REPO+"/contents/"+GH_FILE;
   var hdrs={"Authorization":"Bearer "+pat,"Accept":"application/vnd.github+json","Content-Type":"application/json"};
@@ -795,14 +798,14 @@ function handleFile(f){
       if(tail.indexOf("%%EOF")<0)throw new Error("The PDF looks incomplete \u2014 it may still be downloading from cloud storage. Save it to your device, then upload.");
       return parsePdf(u8).then(function(sched){
         state.sched=sched;state.meta.pdf=f.name;
-        try{localStorage.setItem(KEY_S,JSON.stringify(sched));}catch(_){}
+        try{localStorage.setItem(KEY_S,JSON.stringify(sched));localStorage.setItem(LS_TS_KEY,String(Date.now()));}catch(_){}
         state.notice="Schedule & results updated \u2014 current through round "+sched.rounds.length+".";
       });
     }
     if(typeof XLSX==="undefined")throw new Error("Spreadsheet reader didn\u2019t load \u2014 check your connection.");
     var parsed=parseWorkbook(buf);
     state.box={games:parsed.games,weeks:parsed.weeks};state.meta.box=f.name;
-    try{localStorage.setItem(KEY_B,JSON.stringify(state.box));}catch(_){}
+    try{localStorage.setItem(KEY_B,JSON.stringify(state.box));localStorage.setItem(LS_TS_KEY,String(Date.now()));}catch(_){}
     state.notice="Box scores added \u2014 player stats are live.";
     return null;
   }).then(function(){
@@ -818,11 +821,13 @@ document.getElementById("cpl-file").addEventListener("change",function(e){
 (function(){
   try{var d=localStorage.getItem(DKEY);if(d)state.division=d;}catch(_){}
   try{var o=localStorage.getItem(OVKEY);if(o)state.overrides=JSON.parse(o)||{};}catch(_){}
+  var lsTs=0;try{lsTs=+(localStorage.getItem(LS_TS_KEY)||0);}catch(_){}
+  var lsNewer=lsTs>BAKED_TS;
   try{state.sched=bakedSched();}catch(e){state.sched=null;}
-  try{var s=localStorage.getItem(KEY_S);if(s){var sv=JSON.parse(s);if(sv&&sv.fixtures&&sv.fixtures.length)state.sched=sv;}}catch(_){}
+  if(lsNewer)try{var s=localStorage.getItem(KEY_S);if(s){var sv=JSON.parse(s);if(sv&&sv.fixtures&&sv.fixtures.length)state.sched=sv;}}catch(_){}
   try{var fv=localStorage.getItem(FAVKEY);if(fv)state.fav=fv;}catch(_){}
   try{state.box=bakedBox();}catch(e){state.box=null;}
-  try{var b=localStorage.getItem(KEY_B);if(b){var bv=JSON.parse(b);if(bv&&bv.games)state.box=bv;}}catch(_){}
+  if(lsNewer)try{var b=localStorage.getItem(KEY_B);if(b){var bv=JSON.parse(b);if(bv&&bv.games)state.box=bv;}}catch(_){}
   render();
 })();
 </script>
