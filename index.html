@@ -172,6 +172,18 @@ table.tbl{border-collapse:collapse;width:100%}
 .side{font-size:17px;line-height:1.05}
 .score{display:flex;align-items:center;gap:8px;font-size:30px;justify-content:center}
 .empty{text-align:center;color:var(--mut2);padding:36px 16px;font-size:14px;line-height:1.55}
+.search-inp{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:15px;color:var(--txt);outline:none}
+.search-inp:focus{border-color:var(--amber)}
+.player-list{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);margin-top:4px}
+.player-row{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--line)}
+.player-row:last-child{border-bottom:none}
+.player-row:hover,.player-row:active{background:var(--hover)}
+.stat-cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
+.scard{flex:1;min-width:80px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;text-align:center}
+.scard-v{font-size:22px;font-weight:700;line-height:1}
+.scard-l{font-size:10px;font-weight:600;letter-spacing:.05em;color:var(--mut2);margin-top:4px}
+.ltbl .hilite{color:var(--amber);font-weight:700}
+.ltbl th.hilite{color:var(--amber)}
 .err{margin-top:18px;display:flex;gap:9px;align-items:flex-start;background:rgba(226,109,109,.1);border:1px solid rgba(208,59,59,.3);color:#b3261e;padding:11px 14px;border-radius:11px;font-size:13.5px}
 @media (min-width:760px){
   .wrap{max-width:880px}
@@ -454,6 +466,7 @@ function render(){
     if(v.name==="team")app.innerHTML=screenTeam(v.team,v.tab||"games",v.edit);
     else if(v.name==="game")app.innerHTML=screenGame(v.gameIdx,v.from);
     else if(v.name==="schedule")app.innerHTML=screenSchedule();
+    else if(v.name==="career")app.innerHTML=screenCareer();
     else app.innerHTML=screenStandings();
   }catch(e){app.innerHTML='<div class="wrap"><div class="err" style="margin-top:40px">'+svg(IC.alert,16)+'<span>'+esc(e.message||"Something went wrong rendering.")+'</span></div></div>';}
   window.scrollTo(0,0);
@@ -463,7 +476,7 @@ function render(){
 function dmy(s){var m=/(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s||"");return m?new Date(+m[3],+m[2]-1,+m[1]):null;}
 function defaultRound(sched){var now=new Date(),best=sched.allRounds[0],bd=Infinity;sched.allRounds.forEach(function(rn){var d=dmy(sched.dates[rn]);if(d){var diff=Math.abs(d-now);if(diff<bd){bd=diff;best=rn;}}});return best;}
 function allByes(round){var playing={};(state.sched?state.sched.fixtures:[]).forEach(function(f){if(f.round===round){playing[nkey(f.teamA)]=1;playing[nkey(f.teamB)]=1;}});var out=[];DIVISIONS.forEach(function(d){d.teams.forEach(function(t){if(!playing[nkey(t)])out.push(t);});});return out;}
-function segHTML(mode){return '<div class="seg"><button class="'+(mode==="ladder"?"on":"")+'" data-act="goladder">Ladder</button><button class="'+(mode==="schedule"?"on":"")+'" data-act="goschedule">Schedule</button></div>';}
+function segHTML(mode){return '<div class="seg"><button class="'+(mode==="ladder"?"on":"")+'" data-act="goladder">Ladder</button><button class="'+(mode==="schedule"?"on":"")+'" data-act="goschedule">Schedule</button><button class="'+(mode==="career"?"on":"")+'" data-act="gocareer">Career</button></div>';}
 var IS_ADMIN=(new URLSearchParams(location.search)).has("admin");
 function ghPat(){try{return localStorage.getItem(GH_PAT_KEY)||"";}catch(_){return "";}}
 function headActions(){
@@ -520,6 +533,188 @@ function publishToGithub(){
       state.loading="";state.notice="Published — site will update in ≈ 1 minute.";render();
     })
     .catch(function(e){state.loading="";state.error="Publish failed: "+((e&&e.message)||e);render();});
+}
+/* ============================== career ============================== */
+var careerData=null;
+var CAREER_URL="https://hazlees.github.io/cpl-stats/data/career.json";
+function loadCareer(){
+  if(careerData||state.careerLoading)return;
+  state.careerLoading=true;state.loading="Loading career data…";render();
+  fetch(CAREER_URL).then(function(r){return r.json();}).then(function(d){
+    careerData=d;state.careerLoading=false;state.loading="";render();
+  }).catch(function(e){state.careerLoading=false;state.loading="";state.error="Couldn't load career data: "+((e&&e.message)||e);render();});
+}
+function currentSeasonByPlayer(){
+  var P={};
+  var games=(state.box&&state.box.games)||[];
+  games.forEach(function(gm){
+    [[gm.playersA,gm.teamA],[gm.playersB,gm.teamB]].forEach(function(pair){
+      (pair[0]||[]).forEach(function(p){
+        var nm=(p.name+" "+p.surname).trim();var key=nm.toLowerCase();if(!key)return;
+        if(!P[key])P[key]={name:nm,team:pair[1],gp:0,fg:0,"3p":0,ft:0,reb:0,ast:0,stl:0,blk:0,pts:0};
+        var e=P[key];e.gp++;e.fg+=p.FG||0;e["3p"]+=p["3P"]||0;e.ft+=p.FT||0;e.reb+=p.REB||0;e.ast+=p.AST||0;e.stl+=p.STL||0;e.blk+=p.BLK||0;e.pts+=PT(p);
+      });
+    });
+  });
+  return P;
+}
+function careerHeader(){
+  var v=state.view;
+  var subs=["players","teams","seasons"];
+  var tabs=subs.map(function(s){return '<button class="dtab tap'+(v.sub===s?" active":"")+'" data-act="career-sub" data-sub="'+s+'">'+s.charAt(0).toUpperCase()+s.slice(1)+'</button>';}).join("");
+  return '<div class="head"><div><div class="eyebrow">CANBERRA PLAYERS LEAGUE</div>'+segHTML("career")+'</div></div><div class="dtabs scroll-x">'+tabs+'</div>';
+}
+function fmtAvg(v,g){return g?((v/g).toFixed(1)):"–";}
+function careerStatRow(r,schema){
+  var i=schema;
+  return '<tr><td class="l">'+esc(r[i.season])+'</td><td class="l">'+esc(r[i.team])+'</td><td>D'+r[i.div]+'</td><td>'+r[i.gp]+'</td><td class="hilite">'+fmtAvg(r[i.pts],r[i.gp])+'</td><td>'+r[i.pts]+'</td><td>'+fmtAvg(r[i.reb],r[i.gp])+'</td><td>'+fmtAvg(r[i.ast],r[i.gp])+'</td><td>'+fmtAvg(r[i.stl],r[i.gp])+'</td><td>'+fmtAvg(r[i.blk],r[i.gp])+'</td><td>'+r[i.fg]+'</td><td>'+r[i['3p']]+'</td><td>'+r[i.ft]+'</td></tr>';
+}
+function careerStatsTable(rows, schema){
+  var hd='<tr><th class="l">Season</th><th class="l">Team</th><th>Div</th><th>GP</th><th class="hilite">PPG</th><th>PTS</th><th>RPG</th><th>APG</th><th>SPG</th><th>BPG</th><th>FG</th><th>3P</th><th>FT</th></tr>';
+  var body=rows.map(function(r){return careerStatRow(r,schema);}).join("");
+  return '<div class="ltbl-wrap fade" style="overflow-x:auto"><table class="ltbl"><thead>'+hd+'</thead><tbody>'+body+'</tbody></table></div>';
+}
+function screenCareerPlayers(){
+  var v=state.view;
+  if(!careerData)return '<div class="empty" style="margin-top:40px">Loading…</div>';
+  if(v.player){
+    // Player profile
+    var key=v.player.toLowerCase();
+    var cur=currentSeasonByPlayer();
+    var schema={season:1,team:2,div:3,gp:4,fg:5,"3p":6,ft:7,reb:8,ast:9,stl:10,blk:11,pts:12};
+    var rows=careerData.rows.filter(function(r){return r[0].toLowerCase()===key;});
+    // Add current 2026 season if exists
+    var c26=cur[key];
+    if(c26&&c26.gp>0)rows=rows.concat([[c26.name,"2026",c26.team,"-",c26.gp,c26.fg,c26["3p"],c26.ft,c26.reb,c26.ast,c26.stl,c26.blk,c26.pts]]);
+    var totGP=0,totPTS=0,totREB=0,totAST=0,totSTL=0,totBLK=0,totFG=0,tot3P=0,totFT=0;
+    rows.forEach(function(r){totGP+=r[4];totPTS+=r[12];totREB+=r[8];totAST+=r[9];totSTL+=r[10];totBLK+=r[11];totFG+=r[5];tot3P+=r[6];totFT+=r[7];});
+    var name=rows.length?rows[0][0]:v.player;
+    var cards='<div class="stat-cards">'+
+      '<div class="scard"><div class="scard-v">'+totGP+'</div><div class="scard-l">GP</div></div>'+
+      '<div class="scard"><div class="scard-v hilite">'+fmtAvg(totPTS,totGP)+'</div><div class="scard-l">PPG</div></div>'+
+      '<div class="scard"><div class="scard-v">'+totPTS+'</div><div class="scard-l">PTS</div></div>'+
+      '<div class="scard"><div class="scard-v">'+fmtAvg(totREB,totGP)+'</div><div class="scard-l">RPG</div></div>'+
+      '<div class="scard"><div class="scard-v">'+fmtAvg(totAST,totGP)+'</div><div class="scard-l">APG</div></div>'+
+      '<div class="scard"><div class="scard-v">'+fmtAvg(totSTL,totGP)+'</div><div class="scard-l">SPG</div></div>'+
+      '</div>';
+    return '<div class="wrap"><button class="btn tap" data-act="career-back" style="margin-bottom:12px">'+svg(IC.chev,16)+' Back</button>'+
+      '<div class="eyebrow" style="margin-bottom:4px">CAREER PROFILE</div>'+
+      '<div style="font-size:22px;font-weight:700;margin-bottom:16px">'+esc(name)+'</div>'+
+      cards+
+      '<div style="font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--muted);margin:20px 0 8px">SEASON BY SEASON</div>'+
+      careerStatsTable(rows,schema)+'</div>';
+  }
+  // Search view
+  var q=(v.query||"").toLowerCase().trim();
+  var allNames={};
+  careerData.rows.forEach(function(r){allNames[r[0].toLowerCase()]=r[0];});
+  var cur=currentSeasonByPlayer();
+  Object.keys(cur).forEach(function(k){if(!allNames[k])allNames[k]=cur[k].name;});
+  var names=Object.keys(allNames).sort(function(a,b){return a<b?-1:1;});
+  var filtered=q?names.filter(function(n){return n.indexOf(q)>=0;}):[];
+  var searchBox='<div style="margin-bottom:16px"><div style="display:flex;gap:8px"><input id="career-q" class="search-inp" placeholder="Search player…" value="'+esc(v.query||"")+'" /><button class="btn tap" data-act="career-search">Search</button></div></div>';
+  var list="";
+  if(q&&!filtered.length)list='<div class="empty">No players found for "'+esc(v.query)+'"</div>';
+  else if(filtered.length){
+    list='<div class="player-list">'+filtered.map(function(k){
+      var dispName=allNames[k];
+      var seasons=careerData.rows.filter(function(r){return r[0].toLowerCase()===k;});
+      if(cur[k]&&cur[k].gp)seasons=seasons.concat([cur[k]]);
+      var gp=seasons.reduce(function(s,r){return s+(r[4]||r.gp||0);},0);
+      return '<div class="player-row tap" data-act="career-player" data-player="'+esc(k)+'">'+
+        '<span>'+esc(dispName)+'</span>'+
+        '<span class="mono muted" style="font-size:12px">'+gp+' GP</span></div>';
+    }).join("")+'</div>';
+  } else {
+    list='<div class="empty" style="color:var(--muted);font-size:13px">Search for a player by name above.</div>';
+  }
+  return '<div class="wrap">'+searchBox+list+'</div>';
+}
+function screenCareerTeams(){
+  var v=state.view;
+  if(!careerData)return '<div class="empty" style="margin-top:40px">Loading…</div>';
+  if(v.team){
+    var tkey=v.team;
+    var schema={season:1,team:2,div:3,gp:4,fg:5,"3p":6,ft:7,reb:8,ast:9,stl:10,blk:11,pts:12};
+    // Group by player, show totals for this team
+    var byPlayer={};
+    careerData.rows.filter(function(r){return r[2].toLowerCase()===tkey;}).forEach(function(r){
+      var nk=r[0].toLowerCase();
+      if(!byPlayer[nk])byPlayer[nk]={name:r[0],gp:0,fg:0,"3p":0,ft:0,reb:0,ast:0,stl:0,blk:0,pts:0};
+      var e=byPlayer[nk];e.gp+=r[4];e.fg+=r[5];e["3p"]+=r[6];e.ft+=r[7];e.reb+=r[8];e.ast+=r[9];e.stl+=r[10];e.blk+=r[11];e.pts+=r[12];
+    });
+    // Also add current 2026 season players on this team
+    var cur=currentSeasonByPlayer();
+    Object.keys(cur).forEach(function(k){
+      var c=cur[k];if(c.team.toLowerCase()!==tkey)return;
+      if(!byPlayer[k])byPlayer[k]={name:c.name,gp:0,fg:0,"3p":0,ft:0,reb:0,ast:0,stl:0,blk:0,pts:0};
+      var e=byPlayer[k];e.gp+=c.gp;e.fg+=c.fg;e["3p"]+=c["3p"];e.ft+=c.ft;e.reb+=c.reb;e.ast+=c.ast;e.stl+=c.stl;e.blk+=c.blk;e.pts+=c.pts;
+    });
+    var players=Object.values(byPlayer).sort(function(a,b){return b.pts-a.pts;});
+    var teamName=v.team.split(" ").map(function(w){return w.charAt(0).toUpperCase()+w.slice(1);}).join(" ");
+    var hd='<tr><th class="l">Player</th><th>GP</th><th class="hilite">PPG</th><th>PTS</th><th>RPG</th><th>APG</th><th>SPG</th></tr>';
+    var body=players.map(function(p){
+      return '<tr class="tap" data-act="career-player" data-player="'+esc(p.name.toLowerCase())+'"><td class="l">'+esc(p.name)+'</td><td>'+p.gp+'</td><td class="hilite">'+fmtAvg(p.pts,p.gp)+'</td><td>'+p.pts+'</td><td>'+fmtAvg(p.reb,p.gp)+'</td><td>'+fmtAvg(p.ast,p.gp)+'</td><td>'+fmtAvg(p.stl,p.gp)+'</td></tr>';
+    }).join("");
+    return '<div class="wrap"><button class="btn tap" data-act="career-back" style="margin-bottom:12px">'+svg(IC.chev,16)+' Back</button>'+
+      '<div class="eyebrow" style="margin-bottom:4px">TEAM HISTORY</div>'+
+      '<div style="font-size:22px;font-weight:700;margin-bottom:16px">'+esc(teamName)+'</div>'+
+      '<div class="ltbl-wrap fade" style="overflow-x:auto"><table class="ltbl"><thead>'+hd+'</thead><tbody>'+body+'</tbody></table></div></div>';
+  }
+  // Team list
+  var teams={};
+  careerData.rows.forEach(function(r){var tk=r[2].toLowerCase();if(!teams[tk])teams[tk]=r[2];});
+  var cur=currentSeasonByPlayer();Object.values(cur).forEach(function(c){var tk=c.team.toLowerCase();if(!teams[tk])teams[tk]=c.team;});
+  var sorted=Object.keys(teams).sort(function(a,b){return a<b?-1:1;});
+  var list='<div class="player-list">'+sorted.map(function(k){
+    return '<div class="player-row tap" data-act="career-team" data-team="'+esc(k)+'">'+esc(teams[k])+'</div>';
+  }).join("")+'</div>';
+  return '<div class="wrap">'+list+'</div>';
+}
+function screenCareerSeasons(){
+  var v=state.view;
+  if(!careerData)return '<div class="empty" style="margin-top:40px">Loading…</div>';
+  if(v.season){
+    var schema={season:1,team:2,div:3,gp:4,fg:5,"3p":6,ft:7,reb:8,ast:9,stl:10,blk:11,pts:12};
+    var sl=v.season;
+    var rows=sl==="2026"
+      ? Object.values(currentSeasonByPlayer()).map(function(c){return [c.name,"2026",c.team,"-",c.gp,c.fg,c["3p"],c.ft,c.reb,c.ast,c.stl,c.blk,c.pts];})
+      : careerData.rows.filter(function(r){return r[1]===sl;});
+    rows=rows.slice().sort(function(a,b){return b[12]-a[12];});
+    var hd='<tr><th class="l">Player</th><th class="l">Team</th><th>Div</th><th>GP</th><th class="hilite">PPG</th><th>PTS</th><th>RPG</th><th>APG</th><th>SPG</th></tr>';
+    var body=rows.map(function(r){
+      return '<tr class="tap" data-act="career-player" data-player="'+esc(r[0].toLowerCase())+'">'+
+        '<td class="l">'+esc(r[0])+'</td><td class="l">'+esc(r[2])+'</td><td>'+(r[3]||"-")+'</td><td>'+r[4]+'</td>'+
+        '<td class="hilite">'+fmtAvg(r[12],r[4])+'</td><td>'+r[12]+'</td>'+
+        '<td>'+fmtAvg(r[8],r[4])+'</td><td>'+fmtAvg(r[9],r[4])+'</td><td>'+fmtAvg(r[10],r[4])+'</td></tr>';
+    }).join("");
+    return '<div class="wrap"><button class="btn tap" data-act="career-back" style="margin-bottom:12px">'+svg(IC.chev,16)+' Back</button>'+
+      '<div class="eyebrow" style="margin-bottom:4px">SEASON</div>'+
+      '<div style="font-size:22px;font-weight:700;margin-bottom:16px">'+esc(sl)+'</div>'+
+      '<div class="ltbl-wrap fade" style="overflow-x:auto"><table class="ltbl"><thead>'+hd+'</thead><tbody>'+body+'</tbody></table></div></div>';
+  }
+  // Season list
+  var seasons={};
+  careerData.rows.forEach(function(r){seasons[r[1]]=1;});
+  seasons["2026"]=1;
+  var sorted=Object.keys(seasons).sort(function(a,b){return b>a?1:-1;});
+  var list='<div class="player-list">'+sorted.map(function(s){
+    var count=s==="2026"?Object.keys(currentSeasonByPlayer()).length:careerData.rows.filter(function(r){return r[1]===s;}).length;
+    return '<div class="player-row tap" data-act="career-season" data-season="'+esc(s)+'"><span>'+esc(s)+'</span><span class="mono muted" style="font-size:12px">'+count+' players</span></div>';
+  }).join("")+'</div>';
+  return '<div class="wrap">'+list+'</div>';
+}
+function screenCareer(){
+  var v=state.view;
+  var inner="";
+  if(v.sub==="teams")inner=screenCareerTeams();
+  else if(v.sub==="seasons")inner=screenCareerSeasons();
+  else inner=screenCareerPlayers();
+  return '<div class="wrap"><div class="sticky">'+
+    '<div class="head"><div><div class="eyebrow">CANBERRA PLAYERS LEAGUE</div>'+segHTML("career")+'</div></div>'+
+    '<div class="dtabs scroll-x">'+
+    ['players','teams','seasons'].map(function(s){return '<button class="dtab tap'+(v.sub===s?" active":"")+'" data-act="career-sub" data-sub="'+s+'">'+s.charAt(0).toUpperCase()+s.slice(1)+'</button>';}).join("")+
+    '</div></div>'+inner+'</div>';
 }
 function mainTop(mode,cur,divs){
   var tabs=divs.map(function(d){return '<button class="dtab tap'+(d.name===cur?" active":"")+'" data-act="div" data-div="'+esc(d.name)+'">'+esc(d.short)+'</button>';}).join("");
@@ -756,6 +951,13 @@ app.addEventListener("click",function(e){
   else if(act==="back-standings")state.view={name:"standings"};
   else if(act==="goladder")state.view={name:"standings"};
   else if(act==="goschedule")state.view={name:"schedule"};
+  else if(act==="gocareer"){state.view={name:"career",sub:"players",query:"",player:null,team:null,season:null};loadCareer();render();return;}
+  else if(act==="career-sub"){state.view.sub=el.getAttribute("data-sub");state.view.player=null;state.view.team=null;state.view.season=null;}
+  else if(act==="career-player"){state.view.player=el.getAttribute("data-player");state.view.team=null;state.view.season=null;}
+  else if(act==="career-team"){state.view.team=el.getAttribute("data-team");}
+  else if(act==="career-season"){state.view.season=el.getAttribute("data-season");}
+  else if(act==="career-back"){state.view.player=null;state.view.team=null;state.view.season=null;}
+  else if(act==="career-search"){var qi=document.getElementById("career-q");if(qi){state.view.query=qi.value;render();return;}}
   else if(act==="game")state.view={name:"game",gameIdx:+el.getAttribute("data-idx"),from:el.getAttribute("data-from")};
   else if(act==="back-team")state.view={name:"team",team:el.getAttribute("data-team"),tab:"games"};
   else if(act==="tab")state.view={name:"team",team:el.getAttribute("data-team"),tab:el.getAttribute("data-tab"),edit:state.view.edit};
