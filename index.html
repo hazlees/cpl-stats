@@ -508,7 +508,7 @@ function exportFile(){
 }
 function publishToGithub(){
   var pat=ghPat();
-  if(!pat)return;
+  if(!pat){state.error="Not connected to GitHub — tap the key icon to set up auto-publish, then update again.";render();return;}
   var fixT="var BAKED_FIX="+encFix()+";";
   var datesT="var BAKED_DATES="+encDates()+";";
   var boxT="var BAKED_BOX="+encBox()+";";
@@ -966,7 +966,7 @@ app.addEventListener("click",function(e){
   else if(act==="schedround")state.schedRound=+el.getAttribute("data-rn");
   else if(act==="fav"){var ft=el.getAttribute("data-team");state.fav=(state.fav&&nkey(state.fav)===nkey(ft))?null:ft;try{localStorage.setItem(FAVKEY,state.fav||"");}catch(_){}}
   else if(act==="export"){exportFile();return;}
-  else if(act==="setup-token"){var cur=ghPat();var tok=prompt("GitHub Personal Access Token\n(needs Contents: read & write permission on the cpl-stats repo)\n\nLeave empty to remove:",cur);if(tok!==null){try{if(tok.trim())localStorage.setItem(GH_PAT_KEY,tok.trim());else localStorage.removeItem(GH_PAT_KEY);}catch(_){}}render();return;}
+  else if(act==="setup-token"){var cur=ghPat();var tok=prompt("GitHub Personal Access Token\n(needs Contents: read & write permission on the cpl-stats repo)\n\nLeave empty to remove:",cur);if(tok!==null){var trimmed=tok.trim();try{if(trimmed){localStorage.setItem(GH_PAT_KEY,trimmed);if(ghPat()!==trimmed){state.error="Token didn’t save — this browser is blocking site storage (check cookie/site-data settings for this page).";}else{state.notice="Token saved.";}}else{localStorage.removeItem(GH_PAT_KEY);state.notice="Token removed.";}}catch(e){state.error="Couldn’t save token: "+((e&&e.message)||e);}}render();return;}
   else if(act==="toggle-edit")state.view={name:"team",team:el.getAttribute("data-team"),tab:state.view.tab||"games",edit:!state.view.edit};
   else if(act==="save-ov"){var t=el.getAttribute("data-team");
     function val(id){var x=document.getElementById(id);if(!x)return null;var v=x.value.trim();return v===""?null:Number(v);}
